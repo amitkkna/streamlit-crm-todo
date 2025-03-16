@@ -1,182 +1,136 @@
 import streamlit as st
+import sqlite3
 import pandas as pd
-from io import BytesIO
-from fpdf import FPDF
+from datetime import date
 
-# Inject custom CSS for improved styling
-st.markdown(
-    """
-    <style>
-    .main {
-        background-color: #f4f6f9;
-    }
-    .header-title {
-        font-size: 2.5em;
-        font-weight: 600;
-        text-align: center;
-        color: #007bff;
-        margin-bottom: 20px;
-    }
-    .section-header {
-        font-size: 1.5em;
-        font-weight: 500;
-        color: #333;
-        margin-bottom: 10px;
-        border-bottom: 2px solid #007bff;
-        padding-bottom: 5px;
-        text-align: center;
-    }
-    .card {
-        background: #fff;
-        border-radius: 8px;
-        padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-    }
-    .download-button {
-        margin: 5px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# ---------- SQLite Helper Functions ----------
 
-# App Title
-st.markdown('<div class="header-title">CRM & To‑Do Application</div>', unsafe_allow_html=True)
-
-# Initialize session state for persistent storage
-if 'crm_entries' not in st.session_state:
-    st.session_state.crm_entries = []
-if 'todo_entries' not in st.session_state:
-    st.session_state.todo_entries = []
-
-# Create two columns for the two sections
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown('<div class="section-header">CRM Application</div>', unsafe_allow_html=True)
-    
-    with st.form("crm_form", clear_on_submit=True):
-        crm_name = st.text_input("Name")
-        crm_contact = st.text_input("Contact")
-        crm_email = st.text_input("Email")
-        crm_company = st.text_input("Company")
-        crm_address = st.text_input("Address")
-        crm_requirement = st.text_area("Requirement")
-        lead_stage = st.selectbox("Stage of Lead", ["New", "In Progress", "Qualified", "Closed"])
-        submit_crm = st.form_submit_button("Add CRM Entry")
-        if submit_crm:
-            st.session_state.crm_entries.append({
-                "name": crm_name,
-                "contact": crm_contact,
-                "email": crm_email,
-                "company": crm_company,
-                "address": crm_address,
-                "requirement": crm_requirement,
-                "lead_stage": lead_stage
-            })
-            st.success("CRM Entry added!")
-    
-    st.markdown('<div class="section-header">CRM Entries</div>', unsafe_allow_html=True)
-    if st.session_state.crm_entries:
-        df_crm = pd.DataFrame(st.session_state.crm_entries)
-        st.dataframe(df_crm, use_container_width=True)
-        
-        # Prepare CRM Excel download
-        crm_excel = BytesIO()
-        with pd.ExcelWriter(crm_excel, engine="xlsxwriter") as writer:
-            df_crm.to_excel(writer, index=False, sheet_name="CRM Data")
-        crm_excel.seek(0)
-        st.download_button(
-            "Download CRM Excel", 
-            crm_excel, 
-            file_name="crm_data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="crm_excel",
-            help="Download CRM data as Excel"
+def init_db():
+    conn = sqlite3.connect("app.db")
+    c = conn.cursor()
+    # Create CRM table if not exists
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS crm (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           name TEXT,
+           contact TEXT,
+           email TEXT,
+           company TEXT,
+           address TEXT,
+           requirement TEXT,
+           lead_stage TEXT
         )
-        
-        # Prepare CRM PDF download
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="CRM Data", ln=True, align='C')
-        pdf.ln(10)
-        for entry in st.session_state.crm_entries:
-            line = (f"Name: {entry.get('name', '')}, Contact: {entry.get('contact', '')}, "
-                    f"Email: {entry.get('email', '')}, Company: {entry.get('company', '')}, "
-                    f"Address: {entry.get('address', '')}, Requirement: {entry.get('requirement', '')}, "
-                    f"Stage: {entry.get('lead_stage', '')}")
-            pdf.multi_cell(0, 10, line)
-        pdf_output = pdf.output(dest='S').encode('latin1')
-        crm_pdf = BytesIO(pdf_output)
-        st.download_button(
-            "Download CRM PDF",
-            crm_pdf,
-            file_name="crm_data.pdf",
-            mime="application/pdf",
-            key="crm_pdf",
-            help="Download CRM data as PDF"
+    ''')
+    # Create ToDo table if not exists
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS todo (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           task TEXT,
+           date_open TEXT,
+           date_close TEXT,
+           reminder TEXT
         )
-    else:
-        st.info("No CRM entries yet.")
+    ''')
+    conn.commit()
+    conn.close()
 
-with col2:
-    st.markdown('<div class="section-header">To‑Do List</div>', unsafe_allow_html=True)
-    
-    with st.form("todo_form", clear_on_submit=True):
-        task = st.text_input("Task")
-        date_open = st.date_input("Date of Opening")
-        date_close = st.date_input("Closing Date")
-        reminder = st.text_input("Reminder", help="e.g., Follow up soon")
-        submit_todo = st.form_submit_button("Add Task")
-        if submit_todo:
-            st.session_state.todo_entries.append({
-                "task": task,
-                "date_open": date_open.strftime("%Y-%m-%d"),
-                "date_close": date_close.strftime("%Y-%m-%d"),
-                "reminder": reminder
-            })
-            st.success("To‑Do Entry added!")
-    
-    st.markdown('<div class="section-header">To‑Do Entries</div>', unsafe_allow_html=True)
-    if st.session_state.todo_entries:
-        df_todo = pd.DataFrame(st.session_state.todo_entries)
-        st.dataframe(df_todo, use_container_width=True)
-        
-        # Prepare To‑Do Excel download
-        todo_excel = BytesIO()
-        with pd.ExcelWriter(todo_excel, engine="xlsxwriter") as writer:
-            df_todo.to_excel(writer, index=False, sheet_name="ToDo Data")
-        todo_excel.seek(0)
-        st.download_button(
-            "Download To‑Do Excel", 
-            todo_excel, 
-            file_name="todo_data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="todo_excel",
-            help="Download To‑Do data as Excel"
-        )
-        
-        # Prepare To‑Do PDF download
-        pdf_todo = FPDF()
-        pdf_todo.add_page()
-        pdf_todo.set_font("Arial", size=12)
-        pdf_todo.cell(200, 10, txt="To‑Do Data", ln=True, align='C')
-        pdf_todo.ln(10)
-        for item in st.session_state.todo_entries:
-            line = (f"Task: {item.get('task', '')}, Date Open: {item.get('date_open', '')}, "
-                    f"Date Close: {item.get('date_close', '')}, Reminder: {item.get('reminder', '')}")
-            pdf_todo.multi_cell(0, 10, line)
-        pdf_todo_output = pdf_todo.output(dest='S').encode('latin1')
-        todo_pdf = BytesIO(pdf_todo_output)
-        st.download_button(
-            "Download To‑Do PDF",
-            todo_pdf,
-            file_name="todo_data.pdf",
-            mime="application/pdf",
-            key="todo_pdf",
-            help="Download To‑Do data as PDF"
-        )
-    else:
-        st.info("No To‑Do entries yet.")
+def add_crm_entry(entry):
+    conn = sqlite3.connect("app.db")
+    c = conn.cursor()
+    c.execute("INSERT INTO crm (name, contact, email, company, address, requirement, lead_stage) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              (entry["name"], entry["contact"], entry["email"], entry["company"], entry["address"], entry["requirement"], entry["lead_stage"]))
+    conn.commit()
+    conn.close()
+
+def add_todo_entry(entry):
+    conn = sqlite3.connect("app.db")
+    c = conn.cursor()
+    c.execute("INSERT INTO todo (task, date_open, date_close, reminder) VALUES (?, ?, ?, ?)",
+              (entry["task"], entry["date_open"], entry["date_close"], entry["reminder"]))
+    conn.commit()
+    conn.close()
+
+def load_crm_entries():
+    conn = sqlite3.connect("app.db")
+    df = pd.read_sql_query("SELECT * FROM crm", conn)
+    conn.close()
+    return df
+
+def load_todo_entries():
+    conn = sqlite3.connect("app.db")
+    df = pd.read_sql_query("SELECT * FROM todo", conn)
+    conn.close()
+    return df
+
+# ---------- Initialize Database ----------
+init_db()
+
+# ---------- Streamlit App UI ----------
+st.title("CRM & To‑Do Application with Filtering")
+
+st.markdown("### CRM Application")
+with st.form("crm_form", clear_on_submit=True):
+    crm_name = st.text_input("Name")
+    crm_contact = st.text_input("Contact")
+    crm_email = st.text_input("Email")
+    crm_company = st.text_input("Company")
+    crm_address = st.text_input("Address")
+    crm_requirement = st.text_area("Requirement")
+    lead_stage = st.selectbox("Stage of Lead", ["New", "In Progress", "Qualified", "Closed"])
+    submitted_crm = st.form_submit_button("Add CRM Entry")
+    if submitted_crm:
+        entry = {
+            "name": crm_name,
+            "contact": crm_contact,
+            "email": crm_email,
+            "company": crm_company,
+            "address": crm_address,
+            "requirement": crm_requirement,
+            "lead_stage": lead_stage
+        }
+        add_crm_entry(entry)
+        st.success("CRM Entry added!")
+
+# ------------------ CRM Filter Options ------------------
+st.markdown("#### Filter CRM Entries")
+filter_name = st.text_input("Filter by Name", key="filter_name")
+filter_stage = st.selectbox("Filter by Stage of Lead", options=["All", "New", "In Progress", "Qualified", "Closed"], key="filter_stage")
+
+df_crm = load_crm_entries()
+if not df_crm.empty:
+    if filter_name:
+        df_crm = df_crm[df_crm['name'].str.contains(filter_name, case=False, na=False)]
+    if filter_stage != "All":
+        df_crm = df_crm[df_crm['lead_stage'] == filter_stage]
+    st.dataframe(df_crm)
+else:
+    st.info("No CRM entries yet.")
+
+st.markdown("---")
+st.markdown("### To‑Do List")
+with st.form("todo_form", clear_on_submit=True):
+    task = st.text_input("Task")
+    date_open = st.date_input("Date of Opening", value=date.today())
+    date_close = st.date_input("Closing Date", value=date.today())
+    reminder = st.text_input("Reminder", help="e.g., Follow up soon")
+    submitted_todo = st.form_submit_button("Add Task")
+    if submitted_todo:
+        entry = {
+            "task": task,
+            "date_open": date_open.strftime("%Y-%m-%d"),
+            "date_close": date_close.strftime("%Y-%m-%d"),
+            "reminder": reminder
+        }
+        add_todo_entry(entry)
+        st.success("To‑Do Entry added!")
+
+# ------------------ To‑Do Filter Options ------------------
+st.markdown("#### Filter To‑Do Entries")
+filter_task = st.text_input("Filter by Task", key="filter_task")
+df_todo = load_todo_entries()
+if not df_todo.empty:
+    if filter_task:
+        df_todo = df_todo[df_todo['task'].str.contains(filter_task, case=False, na=False)]
+    st.dataframe(df_todo)
+else:
+    st.info("No To‑Do entries yet.")
