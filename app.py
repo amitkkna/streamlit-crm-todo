@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import date, datetime
+from datetime import date
 
 # ---------- SQLite Helper Functions ----------
 
@@ -22,15 +22,14 @@ def init_db():
            lead_stage TEXT
         )
     ''')
-    # Create To‑Do table with an additional 'status' column for task state
+    # Create To‑Do table
     c.execute('''
         CREATE TABLE IF NOT EXISTS todo (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
            task TEXT,
            date_open TEXT,
            date_close TEXT,
-           reminder TEXT,
-           status TEXT
+           reminder TEXT
         )
     ''')
     conn.commit()
@@ -50,8 +49,8 @@ def add_todo_entry(entry):
     conn = sqlite3.connect("app.db", check_same_thread=False)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO todo (task, date_open, date_close, reminder, status) VALUES (?, ?, ?, ?, ?)",
-        (entry["task"], entry["date_open"], entry["date_close"], entry["reminder"], entry["status"])
+        "INSERT INTO todo (task, date_open, date_close, reminder) VALUES (?, ?, ?, ?)",
+        (entry["task"], entry["date_open"], entry["date_close"], entry["reminder"])
     )
     conn.commit()
     conn.close()
@@ -79,14 +78,6 @@ def delete_todo_entry(entry_id):
     conn = sqlite3.connect("app.db", check_same_thread=False)
     c = conn.cursor()
     c.execute("DELETE FROM todo WHERE id=?", (entry_id,))
-    conn.commit()
-    conn.close()
-
-def update_todo_status(task_id, new_status):
-    """Update the status for a given todo task."""
-    conn = sqlite3.connect("app.db", check_same_thread=False)
-    c = conn.cursor()
-    c.execute("UPDATE todo SET status = ? WHERE id = ?", (new_status, task_id))
     conn.commit()
     conn.close()
 
@@ -134,6 +125,7 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown('<div class="subheader">CRM Application</div>', unsafe_allow_html=True)
     with st.form("crm_form", clear_on_submit=True):
+        # NEW: Entry Date at the very beginning
         entry_date = st.date_input("Entry Date", value=date.today())
         crm_name = st.text_input("Name")
         crm_contact = st.text_input("Contact")
@@ -161,6 +153,7 @@ with col1:
     df_crm = load_crm_entries()
     if not df_crm.empty:
         st.dataframe(df_crm, use_container_width=True)
+        # Option to delete an entry using its ID
         delete_crm_id = st.selectbox("Select CRM ID to delete", options=df_crm["id"].tolist(), key="crm_delete")
         if st.button("Delete Selected CRM Entry"):
             delete_crm_entry(delete_crm_id)
@@ -177,21 +170,14 @@ with col2:
         task = st.text_input("Task")
         date_open = st.date_input("Date of Opening", value=date.today())
         date_close = st.date_input("Closing Date", value=date.today())
-        # Radio button for task status (default is Pending)
-        status = st.radio("Task Status", options=["Pending", "Completed"], index=0)
-        # Checkbox to optionally set a reminder date
-        set_reminder = st.checkbox("Set Reminder?")
-        reminder_date = None
-        if set_reminder:
-            reminder_date = st.date_input("Reminder Date", value=date.today())
+        reminder = st.text_input("Reminder", help="e.g., Follow up soon")
         submitted_todo = st.form_submit_button("Add Task")
         if submitted_todo:
             entry = {
                 "task": task,
                 "date_open": date_open.strftime("%Y-%m-%d"),
                 "date_close": date_close.strftime("%Y-%m-%d"),
-                "reminder": reminder_date.strftime("%Y-%m-%d") if reminder_date else "",
-                "status": status
+                "reminder": reminder
             }
             add_todo_entry(entry)
             st.success("To‑Do Entry added!")
@@ -199,49 +185,12 @@ with col2:
     st.markdown('<div class="subheader">To‑Do Entries</div>', unsafe_allow_html=True)
     df_todo = load_todo_entries()
     if not df_todo.empty:
-        # Create header row using columns
-        header_cols = st.columns([1, 4, 2, 2, 2])
-        header_cols[0].write("ID")
-        header_cols[1].write("Task")
-        header_cols[2].write("Status")
-        header_cols[3].write("Opened")
-        header_cols[4].write("Reminder")
-
-        # Loop through each todo task and display details with an embedded radio button.
-        for _, row in df_todo.iterrows():
-            row_cols = st.columns([1, 4, 2, 2, 2])
-            row_cols[0].write(row["id"])
-
-            # Apply conditional styling:
-            # - Strikethrough for completed tasks
-            # - Red text for pending tasks older than 2 days
-            task_text = row["task"]
-            d_open = date.fromisoformat(row["date_open"])
-            if row["status"] == "Completed":
-                task_text = f"<s>{task_text}</s>"
-            elif row["status"] == "Pending" and (date.today() - d_open).days > 2:
-                task_text = f'<span style="color:red;">{task_text}</span>'
-            row_cols[1].markdown(task_text, unsafe_allow_html=True)
-
-            # Embed the radio button inside the row for status change
-            new_status = row_cols[2].radio(
-                "",
-                options=["Pending", "Completed"],
-                index=0 if row["status"] == "Pending" else 1,
-                key=f"row_radio_{row['id']}"
-            )
-
-            row_cols[3].write(row["date_open"])
-            row_cols[4].write(row["reminder"])
-
-            # Update the task status if the radio selection changed
-            if new_status != row["status"]:
-                update_todo_status(row["id"], new_status)
-                st.experimental_rerun()
-
+        st.dataframe(df_todo, use_container_width=True)
         delete_todo_id = st.selectbox("Select To‑Do ID to delete", options=df_todo["id"].tolist(), key="todo_delete")
         if st.button("Delete Selected To‑Do Entry"):
             delete_todo_entry(delete_todo_id)
             st.success(f"Deleted To‑Do Entry with ID {delete_todo_id}")
+            df_todo = load_todo_entries()
+            st.dataframe(df_todo, use_container_width=True)
     else:
         st.info("No To‑Do entries yet.")
