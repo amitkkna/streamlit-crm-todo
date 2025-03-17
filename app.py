@@ -32,6 +32,18 @@ def init_db():
            reminder TEXT
         )
     ''')
+    # Create Meeting table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS meeting (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           meeting_date TEXT,
+           name TEXT,
+           email TEXT,
+           contact TEXT,
+           address TEXT,
+           department TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -55,6 +67,16 @@ def add_todo_entry(entry):
     conn.commit()
     conn.close()
 
+def add_meeting_entry(entry):
+    conn = sqlite3.connect("app.db", check_same_thread=False)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO meeting (meeting_date, name, email, contact, address, department) VALUES (?, ?, ?, ?, ?, ?)",
+        (entry["meeting_date"], entry["name"], entry["email"], entry["contact"], entry["address"], entry["department"])
+    )
+    conn.commit()
+    conn.close()
+
 def load_crm_entries():
     conn = sqlite3.connect("app.db", check_same_thread=False)
     df = pd.read_sql_query("SELECT * FROM crm", conn)
@@ -64,6 +86,12 @@ def load_crm_entries():
 def load_todo_entries():
     conn = sqlite3.connect("app.db", check_same_thread=False)
     df = pd.read_sql_query("SELECT * FROM todo", conn)
+    conn.close()
+    return df
+
+def load_meeting_entries():
+    conn = sqlite3.connect("app.db", check_same_thread=False)
+    df = pd.read_sql_query("SELECT * FROM meeting", conn)
     conn.close()
     return df
 
@@ -78,6 +106,13 @@ def delete_todo_entry(entry_id):
     conn = sqlite3.connect("app.db", check_same_thread=False)
     c = conn.cursor()
     c.execute("DELETE FROM todo WHERE id=?", (entry_id,))
+    conn.commit()
+    conn.close()
+
+def delete_meeting_entry(entry_id):
+    conn = sqlite3.connect("app.db", check_same_thread=False)
+    c = conn.cursor()
+    c.execute("DELETE FROM meeting WHERE id=?", (entry_id,))
     conn.commit()
     conn.close()
 
@@ -116,16 +151,16 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-st.markdown('<div class="header">Enhanced CRM & To‑Do App</div>', unsafe_allow_html=True)
+st.markdown('<div class="header">Enhanced CRM, To‑Do & Meeting App</div>', unsafe_allow_html=True)
 
-# Create two columns for side-by-side layout
+# Create two columns for side-by-side layout for CRM and To‑Do
 col1, col2 = st.columns(2)
 
 # ----- CRM Section -----
 with col1:
     st.markdown('<div class="subheader">CRM Application</div>', unsafe_allow_html=True)
     with st.form("crm_form", clear_on_submit=True):
-        # NEW: Entry Date at the very beginning
+        # Entry Date at the very beginning
         entry_date = st.date_input("Entry Date", value=date.today())
         crm_name = st.text_input("Name")
         crm_contact = st.text_input("Contact")
@@ -153,7 +188,6 @@ with col1:
     df_crm = load_crm_entries()
     if not df_crm.empty:
         st.dataframe(df_crm, use_container_width=True)
-        # Option to delete an entry using its ID
         delete_crm_id = st.selectbox("Select CRM ID to delete", options=df_crm["id"].tolist(), key="crm_delete")
         if st.button("Delete Selected CRM Entry"):
             delete_crm_entry(delete_crm_id)
@@ -194,3 +228,53 @@ with col2:
             st.dataframe(df_todo, use_container_width=True)
     else:
         st.info("No To‑Do entries yet.")
+
+# ----- Meeting List Section -----
+st.markdown('<div class="subheader">Meeting List</div>', unsafe_allow_html=True)
+with st.form("meeting_form", clear_on_submit=True):
+    meeting_date = st.date_input("Meeting Date", value=date.today())
+    
+    # Load CRM entries to auto-populate details based on name
+    df_crm_for_meeting = load_crm_entries()
+    if not df_crm_for_meeting.empty:
+        names = df_crm_for_meeting['name'].unique().tolist()
+        selected_name = st.selectbox("Select Name", options=names)
+        # Automatically retrieve details for the selected name from CRM
+        selected_entry = df_crm_for_meeting[df_crm_for_meeting['name'] == selected_name].iloc[0]
+        meeting_email = selected_entry['email']
+        meeting_contact = selected_entry['contact']
+        meeting_address = selected_entry['address']
+        st.write("Automatically filled details based on CRM entry.")
+    else:
+        selected_name = st.text_input("Name")
+        meeting_email = st.text_input("Email ID")
+        meeting_contact = st.text_input("Contact Number")
+        meeting_address = st.text_input("Address")
+    
+    meeting_department = st.text_input("Department")
+    
+    submitted_meeting = st.form_submit_button("Add Meeting Entry")
+    if submitted_meeting:
+        entry = {
+            "meeting_date": meeting_date.strftime("%Y-%m-%d"),
+            "name": selected_name,
+            "email": meeting_email,
+            "contact": meeting_contact,
+            "address": meeting_address,
+            "department": meeting_department
+        }
+        add_meeting_entry(entry)
+        st.success("Meeting Entry added!")
+
+st.markdown('<div class="subheader">Meeting Entries</div>', unsafe_allow_html=True)
+df_meeting = load_meeting_entries()
+if not df_meeting.empty:
+    st.dataframe(df_meeting, use_container_width=True)
+    delete_meeting_id = st.selectbox("Select Meeting ID to delete", options=df_meeting["id"].tolist(), key="meeting_delete")
+    if st.button("Delete Selected Meeting Entry"):
+        delete_meeting_entry(delete_meeting_id)
+        st.success(f"Deleted Meeting Entry with ID {delete_meeting_id}")
+        df_meeting = load_meeting_entries()
+        st.dataframe(df_meeting, use_container_width=True)
+else:
+    st.info("No Meeting entries yet.")
