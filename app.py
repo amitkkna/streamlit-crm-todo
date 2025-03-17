@@ -32,7 +32,7 @@ def init_db():
            reminder TEXT
         )
     ''')
-    # Create Meeting table
+    # Create Meeting table with additional columns for purpose and remark
     c.execute('''
         CREATE TABLE IF NOT EXISTS meeting (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +41,9 @@ def init_db():
            email TEXT,
            contact TEXT,
            address TEXT,
-           department TEXT
+           department TEXT,
+           purpose TEXT,
+           remark TEXT
         )
     ''')
     conn.commit()
@@ -71,8 +73,8 @@ def add_meeting_entry(entry):
     conn = sqlite3.connect("app.db", check_same_thread=False)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO meeting (meeting_date, name, email, contact, address, department) VALUES (?, ?, ?, ?, ?, ?)",
-        (entry["meeting_date"], entry["name"], entry["email"], entry["contact"], entry["address"], entry["department"])
+        "INSERT INTO meeting (meeting_date, name, email, contact, address, department, purpose, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (entry["meeting_date"], entry["name"], entry["email"], entry["contact"], entry["address"], entry["department"], entry["purpose"], entry["remark"])
     )
     conn.commit()
     conn.close()
@@ -116,6 +118,16 @@ def delete_meeting_entry(entry_id):
     conn.commit()
     conn.close()
 
+def update_meeting_entry(entry):
+    conn = sqlite3.connect("app.db", check_same_thread=False)
+    c = conn.cursor()
+    c.execute(
+        "UPDATE meeting SET meeting_date=?, name=?, email=?, contact=?, address=?, department=?, purpose=?, remark=? WHERE id=?",
+        (entry["meeting_date"], entry["name"], entry["email"], entry["contact"], entry["address"], entry["department"], entry["purpose"], entry["remark"], entry["id"])
+    )
+    conn.commit()
+    conn.close()
+
 # ---------- Initialize Database ----------
 init_db()
 
@@ -153,14 +165,13 @@ st.markdown(
 
 st.markdown('<div class="header">Enhanced CRM, To‑Do & Meeting App</div>', unsafe_allow_html=True)
 
-# Create two columns for side-by-side layout for CRM and To‑Do
-col1, col2 = st.columns(2)
+# Create three tabs for CRM, To‑Do, and Meeting applications
+tabs = st.tabs(["CRM Application", "To‑Do List", "Meeting List"])
 
-# ----- CRM Section -----
-with col1:
+# ----- CRM Tab -----
+with tabs[0]:
     st.markdown('<div class="subheader">CRM Application</div>', unsafe_allow_html=True)
     with st.form("crm_form", clear_on_submit=True):
-        # Entry Date at the very beginning
         entry_date = st.date_input("Entry Date", value=date.today())
         crm_name = st.text_input("Name")
         crm_contact = st.text_input("Contact")
@@ -197,8 +208,8 @@ with col1:
     else:
         st.info("No CRM entries yet.")
 
-# ----- To‑Do Section -----
-with col2:
+# ----- To‑Do Tab -----
+with tabs[1]:
     st.markdown('<div class="subheader">To‑Do List</div>', unsafe_allow_html=True)
     with st.form("todo_form", clear_on_submit=True):
         task = st.text_input("Task")
@@ -229,52 +240,76 @@ with col2:
     else:
         st.info("No To‑Do entries yet.")
 
-# ----- Meeting List Section -----
-st.markdown('<div class="subheader">Meeting List</div>', unsafe_allow_html=True)
-with st.form("meeting_form", clear_on_submit=True):
-    meeting_date = st.date_input("Meeting Date", value=date.today())
-    
-    # Load CRM entries to auto-populate details based on name
-    df_crm_for_meeting = load_crm_entries()
-    if not df_crm_for_meeting.empty:
-        names = df_crm_for_meeting['name'].unique().tolist()
-        selected_name = st.selectbox("Select Name", options=names)
-        # Automatically retrieve details for the selected name from CRM
-        selected_entry = df_crm_for_meeting[df_crm_for_meeting['name'] == selected_name].iloc[0]
-        meeting_email = selected_entry['email']
-        meeting_contact = selected_entry['contact']
-        meeting_address = selected_entry['address']
-        st.write("Automatically filled details based on CRM entry.")
-    else:
-        selected_name = st.text_input("Name")
-        meeting_email = st.text_input("Email ID")
-        meeting_contact = st.text_input("Contact Number")
+# ----- Meeting Tab -----
+with tabs[2]:
+    st.markdown('<div class="subheader">Meeting List</div>', unsafe_allow_html=True)
+    # Meeting Entry Form with additional fields Purpose and Remark
+    with st.form("meeting_form", clear_on_submit=True):
+        meeting_date = st.date_input("Meeting Date", value=date.today())
+        meeting_name = st.text_input("Name")
+        meeting_email = st.text_input("Email")
+        meeting_contact = st.text_input("Contact")
         meeting_address = st.text_input("Address")
+        meeting_department = st.text_input("Department")
+        purpose = st.text_input("Purpose")
+        remark = st.text_area("Remark")
+        submitted_meeting = st.form_submit_button("Add Meeting Entry")
+        if submitted_meeting:
+            entry = {
+                "meeting_date": meeting_date.strftime("%Y-%m-%d"),
+                "name": meeting_name,
+                "email": meeting_email,
+                "contact": meeting_contact,
+                "address": meeting_address,
+                "department": meeting_department,
+                "purpose": purpose,
+                "remark": remark
+            }
+            add_meeting_entry(entry)
+            st.success("Meeting Entry added!")
     
-    meeting_department = st.text_input("Department")
-    
-    submitted_meeting = st.form_submit_button("Add Meeting Entry")
-    if submitted_meeting:
-        entry = {
-            "meeting_date": meeting_date.strftime("%Y-%m-%d"),
-            "name": selected_name,
-            "email": meeting_email,
-            "contact": meeting_contact,
-            "address": meeting_address,
-            "department": meeting_department
-        }
-        add_meeting_entry(entry)
-        st.success("Meeting Entry added!")
-
-st.markdown('<div class="subheader">Meeting Entries</div>', unsafe_allow_html=True)
-df_meeting = load_meeting_entries()
-if not df_meeting.empty:
-    st.dataframe(df_meeting, use_container_width=True)
-    delete_meeting_id = st.selectbox("Select Meeting ID to delete", options=df_meeting["id"].tolist(), key="meeting_delete")
-    if st.button("Delete Selected Meeting Entry"):
-        delete_meeting_entry(delete_meeting_id)
-        st.success(f"Deleted Meeting Entry with ID {delete_meeting_id}")
-        df_meeting = load_meeting_entries()
+    st.markdown('<div class="subheader">Meeting Entries</div>', unsafe_allow_html=True)
+    df_meeting = load_meeting_entries()
+    if not df_meeting.empty:
         st.dataframe(df_meeting, use_container_width=True)
-else:
-    st.info("No Meeting entries yet.")
+        col1, col2 = st.columns(2)
+        with col1:
+            delete_meeting_id = st.selectbox("Select Meeting ID to delete", options=df_meeting["id"].tolist(), key="meeting_delete")
+            if st.button("Delete Selected Meeting Entry"):
+                delete_meeting_entry(delete_meeting_id)
+                st.success(f"Deleted Meeting Entry with ID {delete_meeting_id}")
+                df_meeting = load_meeting_entries()
+                st.dataframe(df_meeting, use_container_width=True)
+        with col2:
+            edit_meeting_id = st.selectbox("Select Meeting ID to edit", options=df_meeting["id"].tolist(), key="meeting_edit")
+            if st.button("Edit Selected Meeting Entry"):
+                # Retrieve the selected meeting entry
+                entry_to_edit = df_meeting[df_meeting["id"] == edit_meeting_id].iloc[0]
+                with st.form("edit_meeting_form", clear_on_submit=True):
+                    meeting_date_edit = st.date_input("Meeting Date", value=pd.to_datetime(entry_to_edit["meeting_date"]))
+                    meeting_name_edit = st.text_input("Name", value=entry_to_edit["name"])
+                    meeting_email_edit = st.text_input("Email", value=entry_to_edit["email"])
+                    meeting_contact_edit = st.text_input("Contact", value=entry_to_edit["contact"])
+                    meeting_address_edit = st.text_input("Address", value=entry_to_edit["address"])
+                    meeting_department_edit = st.text_input("Department", value=entry_to_edit["department"])
+                    purpose_edit = st.text_input("Purpose", value=entry_to_edit["purpose"] if "purpose" in entry_to_edit else "")
+                    remark_edit = st.text_area("Remark", value=entry_to_edit["remark"] if "remark" in entry_to_edit else "")
+                    submitted_edit = st.form_submit_button("Update Meeting Entry")
+                    if submitted_edit:
+                        updated_entry = {
+                            "id": edit_meeting_id,
+                            "meeting_date": meeting_date_edit.strftime("%Y-%m-%d"),
+                            "name": meeting_name_edit,
+                            "email": meeting_email_edit,
+                            "contact": meeting_contact_edit,
+                            "address": meeting_address_edit,
+                            "department": meeting_department_edit,
+                            "purpose": purpose_edit,
+                            "remark": remark_edit,
+                        }
+                        update_meeting_entry(updated_entry)
+                        st.success(f"Meeting Entry with ID {edit_meeting_id} updated!")
+                        df_meeting = load_meeting_entries()
+                        st.dataframe(df_meeting, use_container_width=True)
+    else:
+        st.info("No Meeting entries yet.")
