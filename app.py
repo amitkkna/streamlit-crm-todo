@@ -82,6 +82,14 @@ def delete_todo_entry(entry_id):
     conn.commit()
     conn.close()
 
+def update_todo_status(task_id, new_status):
+    """Update the status for a given todo task."""
+    conn = sqlite3.connect("app.db", check_same_thread=False)
+    c = conn.cursor()
+    c.execute("UPDATE todo SET status = ? WHERE id = ?", (new_status, task_id))
+    conn.commit()
+    conn.close()
+
 # ---------- Initialize Database ----------
 init_db()
 
@@ -169,9 +177,9 @@ with col2:
         task = st.text_input("Task")
         date_open = st.date_input("Date of Opening", value=date.today())
         date_close = st.date_input("Closing Date", value=date.today())
-        # Radio button for task status
+        # Radio button for task status (default is Pending)
         status = st.radio("Task Status", options=["Pending", "Completed"], index=0)
-        # Checkbox for setting a reminder date
+        # Checkbox to optionally set a reminder date
         set_reminder = st.checkbox("Set Reminder?")
         reminder_date = None
         if set_reminder:
@@ -191,31 +199,49 @@ with col2:
     st.markdown('<div class="subheader">To‑Do Entries</div>', unsafe_allow_html=True)
     df_todo = load_todo_entries()
     if not df_todo.empty:
-        # First, check and display any reminders that are due today or overdue.
-        today_str = date.today().strftime("%Y-%m-%d")
+        # Create header row using columns
+        header_cols = st.columns([1, 4, 2, 2, 2])
+        header_cols[0].write("ID")
+        header_cols[1].write("Task")
+        header_cols[2].write("Status")
+        header_cols[3].write("Opened")
+        header_cols[4].write("Reminder")
+
+        # Loop through each todo task and display details with an embedded radio button.
         for _, row in df_todo.iterrows():
-            if row['reminder'] and row['reminder'] <= today_str:
-                st.warning(f"Reminder: '{row['task']}' is due on {row['reminder']}!")
-        
-        # Now display each task with conditional styling.
-        for _, row in df_todo.iterrows():
-            task_text = row['task']
-            d_open = date.fromisoformat(row['date_open'])
-            if row['status'] == "Completed":
-                # Apply strikethrough for completed tasks
+            row_cols = st.columns([1, 4, 2, 2, 2])
+            row_cols[0].write(row["id"])
+
+            # Apply conditional styling:
+            # - Strikethrough for completed tasks
+            # - Red text for pending tasks older than 2 days
+            task_text = row["task"]
+            d_open = date.fromisoformat(row["date_open"])
+            if row["status"] == "Completed":
                 task_text = f"<s>{task_text}</s>"
-            elif row['status'] == "Pending" and (date.today() - d_open).days > 2:
-                # Mark pending tasks older than 2 days in red
+            elif row["status"] == "Pending" and (date.today() - d_open).days > 2:
                 task_text = f'<span style="color:red;">{task_text}</span>'
-            st.markdown(
-                f"**Task ID {row['id']}**: {task_text} (Status: {row['status']}) - Opened: {row['date_open']} - Closes: {row['date_close']} - Reminder: {row['reminder']}",
-                unsafe_allow_html=True
+            row_cols[1].markdown(task_text, unsafe_allow_html=True)
+
+            # Embed the radio button inside the row for status change
+            new_status = row_cols[2].radio(
+                "",
+                options=["Pending", "Completed"],
+                index=0 if row["status"] == "Pending" else 1,
+                key=f"row_radio_{row['id']}"
             )
-        
+
+            row_cols[3].write(row["date_open"])
+            row_cols[4].write(row["reminder"])
+
+            # Update the task status if the radio selection changed
+            if new_status != row["status"]:
+                update_todo_status(row["id"], new_status)
+                st.experimental_rerun()
+
         delete_todo_id = st.selectbox("Select To‑Do ID to delete", options=df_todo["id"].tolist(), key="todo_delete")
         if st.button("Delete Selected To‑Do Entry"):
             delete_todo_entry(delete_todo_id)
             st.success(f"Deleted To‑Do Entry with ID {delete_todo_id}")
-            df_todo = load_todo_entries()
     else:
         st.info("No To‑Do entries yet.")
